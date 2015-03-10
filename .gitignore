@@ -1,5 +1,22 @@
-.gradle
-build/
+# Sumlime Text Mavens Mate Project Files Ignore
+apex-scripts/
+config/
+deploy/
+backup/
+debug/
+*.sublime-project
+*.sublime-settings
+*.sublime-workspace
 
-# Ignore Gradle GUI config
-gradle-app.setting
+###
+### Not Ignored for now
+###
+# Eclipse Force.com IDE files ignore
+#.project
+#.setting/
+#salesforce.schema
+
+#
+private*.properties
+
+.gradle/
