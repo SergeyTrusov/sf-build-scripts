@@ -1,19 +1,47 @@
 import groovy.xml.*
 import groovy.json.*
+import groovy.xml.NamespaceBuilder
 
 // Ant tasks
 def antTaskPrefix = 'ant-'
 def antGroupName = 'Ant'
-ant.importBuild('build.xml') { 
-    antTaskName -> antTaskPrefix + antTaskName
+// ant.importBuild('build.xml') { 
+//     antTaskName -> antTaskPrefix + antTaskName
+// }
+// tasks.matching { 
+//     task -> task.name.startsWith(antTaskPrefix)
+// }*.group = antGroupName
+// tasks.matching { 
+//     task -> task.name.startsWith(antTaskPrefix)
+// }.each {
+//     task -> task.logging.level = LogLevel.INFO
+// }
+
+
+def props = new Properties()
+files('common.sf.properties', 'private.sf.properties').each {
+    i -> i.withInputStream { 
+        stream -> props.load(stream) 
+    }
 }
-tasks.matching { 
-    task -> task.name.startsWith(antTaskPrefix)
-}*.group = antGroupName
-tasks.matching { 
-    task -> task.name.startsWith(antTaskPrefix)
-}.each {
-    task -> task.logging.level = LogLevel.INFO
+
+ant.taskdef(
+    resource: 'com/salesforce/antlib.xml',
+    uri: 'antlib:com.salesforce',
+    classpath: 'ant-salesforce.jar') 
+def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
+
+
+
+task testAntSf << {
+    sfAnt.retrieve(
+        username : props.getProperty('sf.username'),
+        password : props.getProperty('sf.password'),
+        serverurl : props.getProperty('sf.serverurl'),
+        maxPoll : props.getProperty('sf.maxPoll'),
+        retrieveTarget : props.getProperty('sf.path.retrieveTarget'),
+        unpackaged : props.getProperty('sf.path.packageXml')
+    )
 }
 
 task deployChanges(dependsOn: 'backup') << {
@@ -348,8 +376,4 @@ def captureAntOutput(ant, Closure command) {
     ant.project.removeBuildListener(listener)
 
     return buffer.toString("UTF-8");
-}
-task test << {
-    ant.echo('test')
-    ant.sf.deploy()
 }
