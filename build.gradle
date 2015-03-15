@@ -2,6 +2,14 @@ import groovy.xml.*
 import groovy.json.*
 import groovy.xml.NamespaceBuilder
 
+Properties props = new Properties()
+props.load(new FileInputStream("private.sf.properties"))
+
+ext {
+    sfUsername = props.getProperty('sf.username')
+    sfPassword = props.getProperty('sf.password')
+}
+
 // Ant tasks
 def antTaskPrefix = 'ant-'
 def antGroupName = 'Ant'
@@ -17,14 +25,6 @@ def antGroupName = 'Ant'
 //     task -> task.logging.level = LogLevel.INFO
 // }
 
-
-def props = new Properties()
-files('common.sf.properties', 'private.sf.properties').each {
-    i -> i.withInputStream { 
-        stream -> props.load(stream) 
-    }
-}
-
 ant.taskdef(
     resource: 'com/salesforce/antlib.xml',
     uri: 'antlib:com.salesforce',
@@ -32,15 +32,24 @@ ant.taskdef(
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 
+task describe << {
+    logging.captureStandardOutput LogLevel.INFO
+    sfAnt.describeMetadata (
+        username : sfUsername,
+        password : sfPassword,
+        serverurl : getProjectProperty('sf.serverurl'),
+        resultFilePath : 'describe.log'
+    )
+}
 
-task testAntSf << {
+task retrieve << {
     sfAnt.retrieve(
-        username : props.getProperty('sf.username'),
-        password : props.getProperty('sf.password'),
-        serverurl : props.getProperty('sf.serverurl'),
-        maxPoll : props.getProperty('sf.maxPoll'),
-        retrieveTarget : props.getProperty('sf.path.retrieveTarget'),
-        unpackaged : props.getProperty('sf.path.packageXml')
+        username : sfUsername,
+        password : sfPassword,
+        serverurl : properties.getProperty('sf.serverurl'),
+        maxPoll : properties.getProperty('sf.maxPoll'),
+        retrieveTarget : properties.getProperty('sf.path.retrieveTarget'),
+        unpackaged : properties.getProperty('sf.path.packageXml')
     )
 }
 
@@ -376,4 +385,62 @@ def captureAntOutput(ant, Closure command) {
     ant.project.removeBuildListener(listener)
 
     return buffer.toString("UTF-8");
+}
+
+// TODO
+// Convert
+// <target name="retrieveMetadata">
+//   <sf:retrieve 
+//     username="${sf.username}" 
+//     password="${sf.password}" 
+//     serverurl="${sf.serverurl}" 
+//     maxPoll="${sf.maxPoll}" 
+//     retrieveTarget="${sf.path.retrieveTarget}" 
+//     unpackaged="${sf.path.packageXml}"/>
+// </target>
+
+// <target name="deployMetadata">
+//   <sf:deploy 
+//     serverurl="${sf.serverurl}" 
+//     username="${sf.username}" 
+//     password="${sf.password}" 
+//     maxPoll="${sf.maxPoll}" 
+//     deployRoot="${sf.deployRoot}" 
+//     rollbackOnError="${sf.rollbackOnError}" 
+//     checkOnly="${sf.checkOnly}"
+//     runAllTests="${sf.runAllTests}"
+//   />
+// </target>
+// <!-- logType="Debugonly" -->
+// <!-- <runTest>SampleDeployClass</runTest> -->
+
+// <target name="listMetadata">
+//     <sf:listMetadata 
+//         username="${sf.username}" 
+//         password="${sf.password}" 
+//         serverurl="${sf.serverurl}" 
+//         metadataType="${sf.metadataType}"/>
+// </target>
+
+// <!-- Retrieve all the items of a particular metadata type -->
+// <target name="bulkRetrieve">
+//     <sf:bulkRetrieve 
+//         username="${sf.username}" 
+//         password="${sf.password}" 
+//         serverurl="${sf.serverurl}" 
+//         maxPoll="${sf.maxPoll}" 
+//         metadataType="${sf.metadataType}" 
+//         retrieveTarget="${sf.metadataDir}"/>
+// </target>
+
+// <!-- Retrieve the information on all supported metadata type -->
+// <target name="describeMetadata">
+//     <sf:describeMetadata 
+//         username="${sf.username}" 
+//         password="${sf.password}" 
+//         serverurl="${sf.serverurl}"/>
+// </target>
+
+tasks.each {
+    task -> task.group = 'gres.sf'
 }
