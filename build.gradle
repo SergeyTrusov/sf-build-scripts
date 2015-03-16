@@ -389,57 +389,61 @@ def captureAntOutput(ant, Closure command) {
 
 // TODO
 // Convert
-// <target name="retrieveMetadata">
-//   <sf:retrieve 
-//     username="${sf.username}" 
-//     password="${sf.password}" 
-//     serverurl="${sf.serverurl}" 
-//     maxPoll="${sf.maxPoll}" 
-//     retrieveTarget="${sf.path.retrieveTarget}" 
-//     unpackaged="${sf.path.packageXml}"/>
-// </target>
 
-// <target name="deployMetadata">
-//   <sf:deploy 
-//     serverurl="${sf.serverurl}" 
-//     username="${sf.username}" 
-//     password="${sf.password}" 
-//     maxPoll="${sf.maxPoll}" 
-//     deployRoot="${sf.deployRoot}" 
-//     rollbackOnError="${sf.rollbackOnError}" 
-//     checkOnly="${sf.checkOnly}"
-//     runAllTests="${sf.runAllTests}"
-//   />
-// </target>
+task retrieveMetadata << {
+    sfAnt.retrieve(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        retrieveTarget : getProjectProperty('sf.path.retrieveTarget'), 
+        unpackaged : getProjectProperty('sf.path.packageXml')
+    )
+}
+
+task deployMetadata << {
+    sfAnt.deploy(
+        serverurl : getProjectProperty('sf.serverurl'), 
+        username : sfUsername,
+        password : sfPassword,
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        deployRoot : getProjectProperty('sf.deployRoot'), 
+        rollbackOnError : getProjectProperty('sf.rollbackOnError'), 
+        checkOnly : getProjectProperty('sf.checkOnly'),
+        runAllTests : getProjectProperty('sf.runAllTests')
+    )
+}
 // <!-- logType="Debugonly" -->
 // <!-- <runTest>SampleDeployClass</runTest> -->
 
-// <target name="listMetadata">
-//     <sf:listMetadata 
-//         username="${sf.username}" 
-//         password="${sf.password}" 
-//         serverurl="${sf.serverurl}" 
-//         metadataType="${sf.metadataType}"/>
-// </target>
+task listMetadata << {
+    sfAnt.listMetadata(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        metadataType : getProjectProperty('sf.metadataType')
+    )
+}
 
-// <!-- Retrieve all the items of a particular metadata type -->
-// <target name="bulkRetrieve">
-//     <sf:bulkRetrieve 
-//         username="${sf.username}" 
-//         password="${sf.password}" 
-//         serverurl="${sf.serverurl}" 
-//         maxPoll="${sf.maxPoll}" 
-//         metadataType="${sf.metadataType}" 
-//         retrieveTarget="${sf.metadataDir}"/>
-// </target>
+task bulkRetrieve << {
+    sfAnt.bulkRetrieve( 
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        metadataType : getProjectProperty('sf.metadataType'), 
+        retrieveTarget : getProjectProperty('sf.metadataDir')
+    )
+}
 
-// <!-- Retrieve the information on all supported metadata type -->
-// <target name="describeMetadata">
-//     <sf:describeMetadata 
-//         username="${sf.username}" 
-//         password="${sf.password}" 
-//         serverurl="${sf.serverurl}"/>
-// </target>
+task describeMetadata << {
+    sfAnt.describeMetadata(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl')
+    )
+}
+
 
 tasks.each {
     task -> task.group = 'gres.sf'
