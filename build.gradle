@@ -11,8 +11,8 @@ ext {
 }
 
 // Ant tasks
-def antTaskPrefix = 'ant-'
-def antGroupName = 'Ant'
+// def antTaskPrefix = 'ant-'
+// def antGroupName = 'Ant'
 // ant.importBuild('build.xml') { 
 //     antTaskName -> antTaskPrefix + antTaskName
 // }
@@ -30,28 +30,6 @@ ant.taskdef(
     uri: 'antlib:com.salesforce',
     classpath: 'ant-salesforce.jar') 
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
-
-
-task describe << {
-    logging.captureStandardOutput LogLevel.INFO
-    sfAnt.describeMetadata (
-        username : sfUsername,
-        password : sfPassword,
-        serverurl : getProjectProperty('sf.serverurl'),
-        resultFilePath : 'describe.log'
-    )
-}
-
-task retrieve << {
-    sfAnt.retrieve(
-        username : sfUsername,
-        password : sfPassword,
-        serverurl : properties.getProperty('sf.serverurl'),
-        maxPoll : properties.getProperty('sf.maxPoll'),
-        retrieveTarget : properties.getProperty('sf.path.retrieveTarget'),
-        unpackaged : properties.getProperty('sf.path.packageXml')
-    )
-}
 
 task deployChanges(dependsOn: 'backup') << {
     def gitOutput = getGitOutput();
@@ -97,7 +75,7 @@ task deployChanges(dependsOn: 'backup') << {
     if (folderNameDeletedFilesMap.keySet().size() > 0) {
 
         String antOutput = captureAntOutput(ant) {
-            tasks.'ant-listMetadata'.execute()
+            tasks.'listMetadata'.execute()
         }
 
         def folderNameExistDeleteFilesMap = [:]
@@ -135,7 +113,7 @@ task deployChanges(dependsOn: 'backup') << {
     def packageXml = new File(getProjectProperty('build.dir') + '/src/package.xml')
     packageXml.text = packageXmlString
 
-    tasks.'ant-deployMetadata'.execute()
+    tasks.'deployMetadata'.execute()
 }
 
 task backup << {
@@ -194,7 +172,7 @@ task backup << {
         }
     }
 
-    tasks.'ant-retrieveMetadata'.execute()
+    tasks.'retrieveMetadata'.execute()
 
     result = exec {
         workingDir = backupDir
@@ -387,8 +365,7 @@ def captureAntOutput(ant, Closure command) {
     return buffer.toString("UTF-8");
 }
 
-// TODO
-// Convert
+// Standard task
 
 task retrieveMetadata << {
     sfAnt.retrieve(
@@ -440,7 +417,8 @@ task describeMetadata << {
     sfAnt.describeMetadata(
         username : sfUsername, 
         password : sfPassword, 
-        serverurl : getProjectProperty('sf.serverurl')
+        serverurl : getProjectProperty('sf.serverurl'),
+        resultFilePath : 'describe.log'
     )
 }
 
