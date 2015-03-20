@@ -2,12 +2,12 @@ import groovy.xml.*
 import groovy.json.*
 import groovy.xml.NamespaceBuilder
 
-Properties props = new Properties()
-props.load(new FileInputStream("private.sf.properties"))
+Properties privateProperties = new Properties()
+privateProperties.load(new FileInputStream("private.sf.properties"))
 
 ext {
-    sfUsername = props.getProperty('sf.username')
-    sfPassword = props.getProperty('sf.password')
+    sfUsername = privateProperties.getProperty('sf.username')
+    sfPassword = privateProperties.getProperty('sf.password')
 }
 
 // Ant tasks
@@ -126,14 +126,15 @@ task backup << {
         folder.deleteDir()
     }
 
-    def result = exec {
-        executable = 'git'
-        args = [
-            'clone', 
-            getProjectProperty('git.repository.url'),
-            backupDir
-        ]
-    }
+    // def result = exec {
+    //     executable = 'git'
+    //     args = [
+    //         'clone', 
+    //         getProjectProperty('git.repository.url'),
+    //         backupDir
+    //     ]
+    // }
+    def result = execGit('.', ['clone', getProjectProperty('git.repository.url'), backupDir])
 
     String gitOutput = '';
     new ByteArrayOutputStream().withStream { os ->
@@ -152,36 +153,42 @@ task backup << {
     def remote = getProjectProperty('git.remote.name')
     def backupBranch = getProjectProperty('git.backup.branch')
     if (!gitOutput.contains(remote + '/' + backupBranch)) {
-        result = exec {
-            workingDir = backupDir
-            executable = 'git'
-            args = [
-                'checkout', 
-                '-b',
-                backupBranch
-            ]
-        }
+        // result = exec {
+        //     workingDir = backupDir
+        //     executable = 'git'
+        //     args = [
+        //         'checkout', 
+        //         '-b',
+        //         backupBranch
+        //     ]
+        // }
+        result = execGit(backupDir, ['checkout', '-b', backupBranch])
+
     } else {
-        result = exec {
-            workingDir = backupDir
-            executable = 'git'
-            args = [
-                'checkout', 
-                backupBranch
-            ]
-        }
+        // result = exec {
+        //     workingDir = backupDir
+        //     executable = 'git'
+        //     args = [
+        //         'checkout', 
+        //         backupBranch
+        //     ]
+        // }
+        result = execGit(backupDir, ['checkout', backupBranch])
+
     }
 
     tasks.'retrieveMetadata'.execute()
 
-    result = exec {
-        workingDir = backupDir
-        executable = 'git'
-        args = [
-            'add', 
-            '-A'
-        ]
-    }
+    // result = exec {
+    //     workingDir = backupDir
+    //     executable = 'git'
+    //     args = [
+    //         'add', 
+    //         '-A'
+    //     ]
+    // }
+    result = execGit(backupDir, ['add', '-A'])
+
 
     gitOutput = '';
     new ByteArrayOutputStream().withStream { os ->
@@ -205,25 +212,28 @@ task backup << {
         return
     }
 
-    result = exec {
-        executable = 'git'
-        args = [
-            'commit', 
-            '-m',
-            getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
-        ]
-        workingDir = backupDir
-    }
+    // result = exec {
+    //     executable = 'git'
+    //     args = [
+    //         'commit', 
+    //         '-m',
+    //         getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
+    //     ]
+    //     workingDir = backupDir
+    // }
+    result = execGit(backupDir, ['commit', '-m', getProjectProperty('git.commit.backup.msg') + ' ' + new Date()])
 
-    result = exec {
-        executable = 'git'
-        args = [
-            'push', 
-            remote,
-            backupBranch
-        ]
-        workingDir = backupDir
-    }
+    // result = exec {
+    //     executable = 'git'
+    //     args = [
+    //         'push', 
+    //         remote,
+    //         backupBranch
+    //     ]
+    //     workingDir = backupDir
+    // }
+    result = execGit(backupDir, ['push', 'remote', backupBranch])
+
 }
 
 def String getGitOutput() {
@@ -347,6 +357,14 @@ def String getProjectProperty(String propertyName) {
         customProprty = this.properties[propertyName]
     }
     return customProprty
+}
+
+def String execGit(String gitWorkingDir, String[] gitArgs) {
+    return exec {
+        workingDir = gitWorkingDir
+        executable = 'git'
+        args = gitArgs
+    }
 }
 
 def captureAntOutput(ant, Closure command) {
