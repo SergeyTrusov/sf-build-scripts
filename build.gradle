@@ -121,6 +121,11 @@ task deployChanges(dependsOn: 'backup') << {
 
 task backup << {
     def backupDir = getProjectProperty('backup.dir')
+    def backupPackageXml = getProjectProperty('backup.packageXml')
+    def repositoryUrl = getProjectProperty('git.repository.url')
+    def remote = getProjectProperty('git.remote.name')
+    def backupBranch = getProjectProperty('git.backup.branch')
+    def commitMsg = getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
 
     def folder = new File(backupDir)
     if (!folder.exists()) {
@@ -129,114 +134,43 @@ task backup << {
         folder.deleteDir()
     }
 
-    // def result = exec {
-    //     executable = 'git'
-    //     args = [
-    //         'clone', 
-    //         getProjectProperty('git.repository.url'),
-    //         backupDir
-    //     ]
-    // }
-    def result = execGit('.', ['clone', getProjectProperty('git.repository.url'), backupDir])
+    formatPrint('Cloning...')
+    def result = execGit('.', ['clone', repositoryUrl, backupDir], null)
 
-    String gitOutput = '';
-    new ByteArrayOutputStream().withStream { os ->
-         result = exec {
-            workingDir = backupDir
-            executable = 'git'
-            args = [
-                'branch', 
-                '-r'
-            ]
-            standardOutput = os
-        }
-        gitOutput = os.toString()
-    }
+    def stream = new ByteArrayOutputStream()
+    result = execGit(backupDir, ['branch', '-r'], stream)
+    String gitOutput = stream.toString()
 
-    def remote = getProjectProperty('git.remote.name')
-    def backupBranch = getProjectProperty('git.backup.branch')
+    formatPrint('Checkout to backup branch...')
     if (!gitOutput.contains(remote + '/' + backupBranch)) {
-        // result = exec {
-        //     workingDir = backupDir
-        //     executable = 'git'
-        //     args = [
-        //         'checkout', 
-        //         '-b',
-        //         backupBranch
-        //     ]
-        // }
-        result = execGit(backupDir, ['checkout', '-b', backupBranch])
-
+        result = execGit(backupDir, ['checkout', '-b', backupBranch], null)
     } else {
-        // result = exec {
-        //     workingDir = backupDir
-        //     executable = 'git'
-        //     args = [
-        //         'checkout', 
-        //         backupBranch
-        //     ]
-        // }
-        result = execGit(backupDir, ['checkout', backupBranch])
-
+        result = execGit(backupDir, ['checkout', backupBranch], null)
     }
 
-    tasks.'retrieveMetadata'.execute()
+    formatPrint('Retrieve Metadata...')
+    retrieveMetadataFromServer(sfAnt, backupDir + '/src', backupPackageXml)
 
-    // result = exec {
-    //     workingDir = backupDir
-    //     executable = 'git'
-    //     args = [
-    //         'add', 
-    //         '-A'
-    //     ]
-    // }
-    result = execGit(backupDir, ['add', '-A'])
+    formatPrint('Add file to index...')
+    result = execGit(backupDir, ['add', '-A'], null)
 
-
-    gitOutput = '';
-    new ByteArrayOutputStream().withStream { os ->
-         result = exec {
-            workingDir = backupDir
-            executable = 'git'
-            args = [
-                'diff', 
-                'HEAD', 
-                '--name-only'
-            ]
-            standardOutput = os
-        }
-        gitOutput = os.toString()
-    }
+    formatPrint('Diffing...')
+    gitOutput = ''
+    stream = new ByteArrayOutputStream()
+    result = execGit(backupDir, ['diff', 'HEAD', '--name-only'], stream)
+    gitOutput = stream.toString()
 
     Boolean isAnyChanges = gitOutput != null && gitOutput.trim() != '';
     if (!isAnyChanges) {
-        logger.quiet('')
-        logger.quiet('There are no chages. Backup is up to date.')
+        formatPrint('There are no chages. Backup is up to date.')
         return
     }
 
-    // result = exec {
-    //     executable = 'git'
-    //     args = [
-    //         'commit', 
-    //         '-m',
-    //         getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
-    //     ]
-    //     workingDir = backupDir
-    // }
-    result = execGit(backupDir, ['commit', '-m', getProjectProperty('git.commit.backup.msg') + ' ' + new Date()])
+    formatPrint('Commit...')
+    result = execGit(backupDir, ['commit', '-m', commitMsg], null)
 
-    // result = exec {
-    //     executable = 'git'
-    //     args = [
-    //         'push', 
-    //         remote,
-    //         backupBranch
-    //     ]
-    //     workingDir = backupDir
-    // }
-    result = execGit(backupDir, ['push', 'remote', backupBranch])
-
+    formatPrint('Push...')
+    result = execGit(backupDir, ['push', 'origin', backupBranch], null)
 }
 
 def String getGitOutput() {
@@ -362,12 +296,24 @@ def String getProjectProperty(String propertyName) {
     return customProprty
 }
 
-def String execGit(String gitWorkingDir, String[] gitArgs) {
+def String execGit(String gitWorkingDir, List<String> gitArgs, OutputStream output) {
+    if (output == null) {
+        output = System.out
+    }
     return exec {
         workingDir = gitWorkingDir
         executable = 'git'
         args = gitArgs
+        standardOutput = output
     }
+}
+
+def formatPrint(String message) {
+    logger.quiet('')
+    logger.quiet('==========================================')
+    logger.quiet(message)
+    logger.quiet('==========================================')
+    logger.quiet('')
 }
 
 def captureAntOutput(ant, Closure command) {
@@ -384,6 +330,17 @@ def captureAntOutput(ant, Closure command) {
     ant.project.removeBuildListener(listener)
 
     return buffer.toString("UTF-8");
+}
+
+def retrieveMetadataFromServer(sfAnt, String targetPath, String packageXmlPath) {
+    sfAnt.retrieve(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        retrieveTarget : targetPath, 
+        unpackaged : packageXmlPath
+    )
 }
 
 // Standard task
