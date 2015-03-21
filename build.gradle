@@ -7,7 +7,9 @@ privateProperties.load(new FileInputStream("private.sf.properties"))
 
 ext {
     sfUsername = privateProperties.getProperty('sf.username')
-    sfPassword = privateProperties.getProperty('sf.password')
+    sfPassword = privateProperties.getProperty('sf.password') 
+    gradleHome = System.getenv('GRADLE_HOME')
+    sfLibPath = gradleHome + '/lib/ant-salesforce.jar'
 }
 
 // Ant tasks
@@ -28,7 +30,8 @@ ext {
 ant.taskdef(
     resource: 'com/salesforce/antlib.xml',
     uri: 'antlib:com.salesforce',
-    classpath: 'ant-salesforce.jar') 
+    classpath: sfLibPath
+)
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 task deployChanges(dependsOn: 'backup') << {
