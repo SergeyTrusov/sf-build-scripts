@@ -12,21 +12,6 @@ ext {
     sfLibPath = gradleHome + '/lib/ant-salesforce.jar'
 }
 
-// Ant tasks
-// def antTaskPrefix = 'ant-'
-// def antGroupName = 'Ant'
-// ant.importBuild('build.xml') { 
-//     antTaskName -> antTaskPrefix + antTaskName
-// }
-// tasks.matching { 
-//     task -> task.name.startsWith(antTaskPrefix)
-// }*.group = antGroupName
-// tasks.matching { 
-//     task -> task.name.startsWith(antTaskPrefix)
-// }.each {
-//     task -> task.logging.level = LogLevel.INFO
-// }
-
 ant.taskdef(
     resource: 'com/salesforce/antlib.xml',
     uri: 'antlib:com.salesforce',
@@ -34,51 +19,52 @@ ant.taskdef(
 )
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
-task deployChanges(dependsOn: 'backup') << {
-    def gitOutput = getGitOutput();
-    logger.info('')
-    logger.info('Git Output : ')
-    logger.info(gitOutput)
+task deployChanges(/*dependsOn: 'backup'*/) << {
+    def stream = new ByteArrayOutputStream()
+    def result = execGit('.', ['diff-tree', '--no-commit-id', '--name-status','-r', 
+        getProjectProperty('git.commit.id.last'), 
+        getProjectProperty('git.commit.id.first')], stream)
+    String gitOutput = stream.toString()
+    formatPrint('Changed files : \r\n' + gitOutput)
     
     def parseWrapper = parseGitOutput(gitOutput)
     def changedSourceFiles = parseWrapper.changedFiles
     def folderNameChangedFilesMap = parseWrapper.folderFilesMap
     def folderNameDeletedFilesMap = parseWrapper.filderDeletedFilesMap
     
-    if (changedSourceFiles.size() == 0) {
-        logger.info('')
-        logger.quiet('There no changed files for deploy')
+    if (changedSourceFiles.size() == 0 && folderNameDeletedFilesMap.keySet().size() == 0) {
+        formatPrint('There no changed files for deploy')
         return
     }
 
     def sourceAndItsMetadataFiles = addMetadataFilesToSources(changedSourceFiles)
-    logger.info('')
-    logger.info('Changed Files For Deploy : ')
-    sourceAndItsMetadataFiles.each {
-        file -> logger.info(file)
-    }
+    formatPrint('Changed Files For Deploy : \r\n' + sourceAndItsMetadataFiles)
 
     delete fileTree(dir: getProjectProperty('build.dir'))
-    logger.info('')
-    logger.info('Delete Forlder : ' + getProjectProperty('build.dir'))
+    formatPrint('Delete Forlder : ' + getProjectProperty('build.dir'))
 
     copy {
         from getProjectProperty('src.dir')
         into getProjectProperty('build.dir')
         include sourceAndItsMetadataFiles
     }
-    logger.info('')
-    logger.info('Copy Files From : ' + getProjectProperty('src.dir') + 
+    formatPrint('Copy Files From : ' + getProjectProperty('src.dir') + 
         ' To : ' + getProjectProperty('build.dir'))
 
     def currentSfApiVersion = getCurrentSfApiVersion()
-    logger.info('')
-    logger.info('Current SF API Version : ' + currentSfApiVersion)
+    formatPrint('Current SF API Version : ' + currentSfApiVersion)
 
     if (folderNameDeletedFilesMap.keySet().size() > 0) {
 
-        String antOutput = captureAntOutput(ant) {
-            tasks.'listMetadata'.execute()
+        String antOutput = '';
+        def metadataDescribe = new JsonSlurper()
+            .parse(file(getProjectProperty('metadata.describe.location')))
+
+        folderNameDeletedFilesMap.each { folder, listOfMetadata ->
+            def theNode = metadataDescribe.metadataObjects
+                        .find { it.directoryName == folder }
+            getListMetadata(sfAnt, theNode.xmlName, 'listMetadata.log')
+            antOutput += new File('listMetadata.log').text
         }
 
         def folderNameExistDeleteFilesMap = [:]
@@ -98,10 +84,14 @@ task deployChanges(dependsOn: 'backup') << {
             }
         }
 
+        if(folderNameExistDeleteFilesMap.keySet().size() == 0
+        && changedSourceFiles.size() == 0) {
+            return
+        }
+
         if (folderNameExistDeleteFilesMap.keySet().size() > 0) {
             def destructiveChangesXmlString = createPackageXml(folderNameExistDeleteFilesMap)
-            logger.info('')
-            logger.info('destructiveChnges.xml : \r\n' + destructiveChangesXmlString)
+            formatPrint('destructiveChnges.xml : \r\n' + destructiveChangesXmlString)
 
             def destructiveChangesXml = 
                 new File(getProjectProperty('build.dir') + '/src/destructiveChanges.xml')
@@ -110,8 +100,7 @@ task deployChanges(dependsOn: 'backup') << {
     }
 
     def packageXmlString = createPackageXml(folderNameChangedFilesMap)
-    logger.info('')
-    logger.info('Package.xml : \r\n' + packageXmlString)
+    formatPrint('Package.xml : \r\n' + packageXmlString)
 
     def packageXml = new File(getProjectProperty('build.dir') + '/src/package.xml')
     packageXml.text = packageXmlString
@@ -171,26 +160,6 @@ task backup << {
 
     formatPrint('Push...')
     result = execGit(backupDir, ['push', 'origin', backupBranch], null)
-}
-
-def String getGitOutput() {
-    String gitOutput = '';
-    new ByteArrayOutputStream().withStream { os ->
-        def result = exec {
-            executable = 'git'
-            args = [
-                'diff-tree', 
-                '--no-commit-id', 
-                '--name-status', 
-                '-r', 
-                getProjectProperty('git.commit.id.last'),
-                getProjectProperty('git.commit.id.first') 
-            ]
-            standardOutput = os
-        }
-        gitOutput = os.toString()
-    }
-    return gitOutput;
 }
 
 def Expando parseGitOutput(String output) {
@@ -343,6 +312,16 @@ def retrieveMetadataFromServer(sfAnt, String targetPath, String packageXmlPath) 
     )
 }
 
+def getListMetadata(sfAnt, String metadataType, String resultPath) {
+    sfAnt.listMetadata(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        metadataType : metadataType,
+        resultFilePath : resultPath
+    )
+
+}
 // Standard task
 
 task retrieveMetadata << {
