@@ -1,8 +1,48 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<Package xmlns="http://soap.sforce.com/2006/04/metadata">
-    <types>
-        <members>GS_SimpleClass1</members>
-        <name>ApexClass</name>
-    </types>
-    <version>33.0</version>
-</Package>
+<?xml version='1.0' encoding='UTF-8'?>
+<package xmlns='http://soap.sforce.com/2006/04/metadata'>
+  <types>
+    <members>Force_com</members>
+    <name>CustomApplication</name>
+</types>
+<types>
+    <members>Class1</members>
+    <members>Class2</members>
+    <members>Class3</members>
+    <members>TestClass</members>
+    <members>GS_SimpleClass1</members>
+    <name>ApexClass</name>
+</types>
+<types>
+    <members>Component1</members>
+    <name>ApexComponent</name>
+</types>
+<types>
+    <members>CustomLabels</members>
+    <name>CustomLabels</name>
+</types>
+<types>
+    <members>Account-Account Layout</members>
+    <members>Object1__c-Object1 Layout</members>
+    <members>Object2__c-Object2 Layout</members>
+    <name>Layout</name>
+</types>
+<types>
+    <members>Account</members>
+    <members>CustomSetting1__c</members>
+    <members>Object1__c</members>
+    <members>Object2__c</members>
+    <name>CustomObject</name>
+</types>
+<types>
+    <members>Page1</members>
+    <members>Page2</members>
+    <members>Page3</members>
+    <name>ApexPage</name>
+</types>
+<types>
+    <members>trigger1</members>
+    <members>trigger2</members>
+    <name>ApexTrigger</name>
+</types>
+<version>33.0</version>
+</package>
