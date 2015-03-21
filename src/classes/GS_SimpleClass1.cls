@@ -4,5 +4,5 @@ public class GS_SimpleClass1 {
 
     }
     
-    // Changes 1
+    // Changes 2
 }
