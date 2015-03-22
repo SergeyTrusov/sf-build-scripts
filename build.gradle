@@ -19,6 +19,41 @@ ant.taskdef(
 )
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
+task generateFullPackageXml << {
+    def folder = new File('temp')
+    folder.mkdir()
+
+    def metadataDescribe = new JsonSlurper()
+        .parse(file(getProjectProperty('metadata.describe.location')))
+
+    def metaMap = [:]
+    def theNode = metadataDescribe.metadataObjects.each { meta ->
+        String folderName = '';
+        if(meta.inFolder) {
+            folderName = meta.xmlName + 'Folder'
+        }
+        // println meta.xmlName
+        if(meta.childXmlNames == null) {
+            getListMetadata(sfAnt, meta.xmlName, 'temp/' + meta.directoryName, folderName) 
+            def metaFile = new File('temp/' + meta.directoryName)
+            if(!metaFile.exists()) {
+                return
+            }
+            def listMeta = []
+            metaFile.eachLine { line ->
+                String s = 'FullName/Id:'
+                if(line.startsWith(s)) {
+                    def name = line.substring(s.size() + 1, line.indexOf('/', s.size()))
+                    listMeta.add(name)
+                }
+            }
+            metaMap.put(meta.xmlName, listMeta.toSet())
+        }
+    }
+    String packageXml = createPackageXml(metaMap, false)
+    println packageXml
+}
+
 task deployChanges(/*dependsOn: 'backup'*/) << {
     def stream = new ByteArrayOutputStream()
     def result = execGit('.', ['diff-tree', '--no-commit-id', '--name-status','-r', 
@@ -90,7 +125,7 @@ task deployChanges(/*dependsOn: 'backup'*/) << {
         }
 
         if (folderNameExistDeleteFilesMap.keySet().size() > 0) {
-            def destructiveChangesXmlString = createPackageXml(folderNameExistDeleteFilesMap)
+            def destructiveChangesXmlString = createPackageXml(folderNameExistDeleteFilesMap, true)
             formatPrint('destructiveChnges.xml : \r\n' + destructiveChangesXmlString)
 
             def destructiveChangesXml = 
@@ -99,7 +134,7 @@ task deployChanges(/*dependsOn: 'backup'*/) << {
         }
     }
 
-    def packageXmlString = createPackageXml(folderNameChangedFilesMap)
+    def packageXmlString = createPackageXml(folderNameChangedFilesMap, true)
     formatPrint('Package.xml : \r\n' + packageXmlString)
 
     def packageXml = new File(getProjectProperty('build.dir') + '/src/package.xml')
@@ -233,7 +268,7 @@ def String getCurrentSfApiVersion() {
     return originalPackageXml.get('version').text();
 }
 
-def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap) {
+def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap, Boolean translateName) {
     def metadataDescribe = new JsonSlurper()
         .parse(file(getProjectProperty('metadata.describe.location')))
 
@@ -247,9 +282,15 @@ def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap)
                 for(file in files) {
                     members(file)
                 }
-                def theNode = metadataDescribe.metadataObjects
-                    .find { it.directoryName == filderName }
-                delegate.name(theNode.xmlName)
+                String xmlName = '';
+                if(translateName) {
+                    def theNode = metadataDescribe.metadataObjects
+                        .find { it.directoryName == filderName }
+                    xmlName = theNode.xmlName
+                } else {
+                    xmlName = filderName
+                }
+                delegate.name(xmlName)
             }
         }
         delegate.version(currentSfApiVersion)
@@ -320,8 +361,19 @@ def getListMetadata(sfAnt, String metadataType, String resultPath) {
         metadataType : metadataType,
         resultFilePath : resultPath
     )
-
 }
+
+def getListMetadata(sfAnt, String metadataType, String resultPath, String folderName) {
+    sfAnt.listMetadata(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'), 
+        metadataType : metadataType,
+        folder : folderName,
+        resultFilePath : resultPath
+    )
+}
+
 // Standard task
 
 task retrieveMetadata << {
@@ -355,6 +407,7 @@ task listMetadata << {
         username : sfUsername, 
         password : sfPassword, 
         serverurl : getProjectProperty('sf.serverurl'), 
+        folder : '',
         metadataType : getProjectProperty('sf.metadataType')
     )
 }

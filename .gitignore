@@ -3,6 +3,7 @@ apex-scripts/
 config/
 deploy/
 backup/
+temp/
 debug/
 *.sublime-project
 *.sublime-settings
