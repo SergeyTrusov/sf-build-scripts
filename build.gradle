@@ -28,12 +28,34 @@ task generateFullPackageXml << {
 
     def metaMap = [:]
     def theNode = metadataDescribe.metadataObjects.each { meta ->
-        String folderName = '';
-        if(meta.inFolder) {
-            folderName = meta.xmlName + 'Folder'
+        if(meta.childXmlNames != null) {
+            return
         }
-        // println meta.xmlName
-        if(meta.childXmlNames == null) {
+
+        if(meta.xmlName == 'EmailTemplate') {
+            return
+        }
+
+        def folders = [];
+        if(meta.inFolder) {
+            getListMetadata(sfAnt, meta.xmlName + 'Folder', 
+                'temp/' + meta.directoryName + 'Folders', '')
+            def metaFile = new File('temp/' + meta.directoryName + 'Folders')
+            if(!metaFile.exists()) {
+                return
+            }
+            metaFile.eachLine { line ->
+                String s = 'FullName/Id:'
+                if(line.startsWith(s)) {
+                    def name = line.substring(s.size() + 1, line.indexOf('/', s.size()))
+                    folders.add(name)
+                }
+            }
+        } else {
+            folders.add('')
+        }
+
+        folders.each{ folderName ->
             getListMetadata(sfAnt, meta.xmlName, 'temp/' + meta.directoryName, folderName) 
             def metaFile = new File('temp/' + meta.directoryName)
             if(!metaFile.exists()) {
