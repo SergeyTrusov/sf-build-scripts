@@ -1,6 +1,23 @@
+apply plugin: 'java'
+apply plugin: 'groovy'
+
 import groovy.xml.*
 import groovy.json.*
 import groovy.xml.NamespaceBuilder
+import groovy.transform.ToString
+import groovyx.net.http.HTTPBuilder
+
+import static groovyx.net.http.Method.*
+import static groovyx.net.http.ContentType.*
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'org.codehaus.groovy.modules.http-builder', name: 'http-builder', version: '0.7.1'
+    }
+}
 
 Properties privateProperties = new Properties()
 privateProperties.load(new FileInputStream("private.sf.properties"))
@@ -19,28 +36,143 @@ ant.taskdef(
 )
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
+task mytest << {
+    println getEmailTemplates()
+}
+
+def getEmailTemplates() {
+    String sessionId = getSessionId().sessionId
+    String url = getSessionId().url
+
+    def emailTemplates = []
+    def http = new HTTPBuilder('https://eu3.salesforce.com')
+    http.request(GET) { req ->
+        uri.path = '/services/data/v33.0/tooling/query'
+        uri.query = [q : 'Select id,FullName from EmailTemplate' ]
+        // contentType : TEXT
+        headers.'Authorization' = "Bearer ${sessionId}"
+
+        response.success = { resp, reader ->
+            println resp
+        }
+
+        response.'200' =  {resp, reader ->
+            reader.records.each {
+                emailTemplates.add(it.FullName)
+            }
+        }
+    }
+    println emailTemplates
+}
+
+def Expando getSessionId() {
+    def http = new HTTPBuilder('https://login.salesforce.com')
+
+    String requestBody = """
+    <env:Envelope xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:env='http://schemas.xmlsoap.org/soap/envelope/'>
+        <env:Body>
+            <sf:login xmlns:sf='urn:enterprise.soap.sforce.com'>
+                <sf:username>${sfUsername}</sf:username>
+                <sf:password>${sfPassword}</sf:password>
+            </sf:login>
+        </env:Body>
+    </env:Envelope>
+    """ 
+    http.request(POST) { req ->
+        uri.path = '/services/Soap/c/33.0'
+        requestContentType = URLENC 
+        headers.'Content-Type' = "text/xml"
+        headers.'SOAPAction' = "login"
+        body = requestBody
+
+        response.success = { resp, reader ->
+            return new Expando(sessionId : reader.Body.loginResponse.result.sessionId,
+                url : reader.Body.loginResponse.result.serverUrl);
+        }
+
+        response.'404' = {
+            println 'Not found'
+        }
+
+        response.'500' =  {resp, reader ->
+            println resp
+            println reader
+        }
+    }
+}
+
+def getAvalibleMetadata(sfAnt) {
+    String describeFileName = 'describe.log';
+
+    getMetadataDescription(sfAnt, describeFileName)
+
+    def describeFile = new File(describeFileName)
+    if(!describeFile.exists()) {
+        return
+    }
+
+    String xmlName = 'XMLName: '
+    String dirName = 'DirName: '
+    String suffix = 'Suffix: '
+    String hasMetaFile = 'HasMetaFile: '
+    String inFolder = 'InFolder: '
+    String childObjects = 'ChildObjects: '
+
+    List<MetadataType> sfMetadataList = new ArrayList<MetadataType>()
+    MetadataType metaType;
+    describeFile.eachLine { line, index ->
+        if(line.startsWith('************************************************************')) {
+            if(index > 1) {
+                sfMetadataList.add(metaType)
+            }
+            metaType = new MetadataType()
+            return
+        }
+
+        if(line.startsWith(xmlName)) {
+            metaType.xmlName = line.substring(xmlName.length())
+        } else if(line.startsWith(dirName)) {
+            metaType.dirName = line.substring(dirName.length())
+        } else if(line.startsWith(suffix)) {
+            metaType.suffix = line.substring(suffix.length())
+        } else if(line.startsWith(hasMetaFile)) {
+            metaType.hasMetaFile = line.substring(hasMetaFile.length()).toBoolean()
+        } else if(line.startsWith(inFolder)) {
+            metaType.inFolder = line.substring(inFolder.length()).toBoolean()
+        } else if(line.startsWith(childObjects)) {
+            def commaSeparatedValues = line.substring(childObjects.length())
+            if(!commaSeparatedValues.contains(',')) {
+                return
+            }
+
+            def childs = commaSeparatedValues.split(',')
+            metaType.childObjects = childs.take(childs.size() - 1)
+        }
+    }
+    return sfMetadataList
+}
+
 task generateFullPackageXml << {
+    def avalibleMetadataList = getAvalibleMetadata(sfAnt)
+
     def folder = new File('temp')
     folder.mkdir()
 
-    def metadataDescribe = new JsonSlurper()
-        .parse(file(getProjectProperty('metadata.describe.location')))
+    def metaTypeFilesMap = [:]
+    avalibleMetadataList.each { metaType ->
+        
+        // if(metaType.childObjects != null) {
+        //     return
+        // }
 
-    def metaMap = [:]
-    def theNode = metadataDescribe.metadataObjects.each { meta ->
-        if(meta.childXmlNames != null) {
+        if(metaType.xmlName == 'EmailTemplate') {
             return
         }
 
-        if(meta.xmlName == 'EmailTemplate') {
-            return
-        }
-
-        def folders = [];
-        if(meta.inFolder) {
-            getListMetadata(sfAnt, meta.xmlName + 'Folder', 
-                'temp/' + meta.directoryName + 'Folders', '')
-            def metaFile = new File('temp/' + meta.directoryName + 'Folders')
+        def folders = []
+        if(metaType.inFolder) {
+            getListMetadata(sfAnt, metaType.xmlName + 'Folder', 'temp/' + metaType.dirName, '')
+            def metaFile = new File('temp/' + metaType.dirName)
             if(!metaFile.exists()) {
                 return
             }
@@ -55,9 +187,9 @@ task generateFullPackageXml << {
             folders.add('')
         }
 
-        folders.each{ folderName ->
-            getListMetadata(sfAnt, meta.xmlName, 'temp/' + meta.directoryName, folderName) 
-            def metaFile = new File('temp/' + meta.directoryName)
+        folders.each { folderName ->
+            getListMetadata(sfAnt, metaType.xmlName, 'temp/' + metaType.dirName, folderName) 
+            def metaFile = new File('temp/' + metaType.dirName)
             if(!metaFile.exists()) {
                 return
             }
@@ -69,11 +201,12 @@ task generateFullPackageXml << {
                     listMeta.add(name)
                 }
             }
-            metaMap.put(meta.xmlName, listMeta.toSet())
+            metaTypeFilesMap.put(metaType.xmlName, listMeta.toSet())
         }
+        
     }
-    String packageXml = createPackageXml(metaMap, false)
-    println packageXml
+    def packageXmlFile = new File('package.xml')
+    packageXmlFile.text = createPackageXml(metaTypeFilesMap, false)
 }
 
 task deployChanges(/*dependsOn: 'backup'*/) << {
@@ -454,6 +587,15 @@ task describeMetadata << {
     )
 }
 
+@ToString(includeNames=true)
+class MetadataType {
+    String xmlName
+    String dirName
+    String suffix
+    Boolean hasMetaFile
+    Boolean inFolder
+    String[] childObjects
+}
 
 tasks.each {
     task -> task.group = 'gres.sf'
