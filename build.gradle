@@ -161,6 +161,8 @@ def generateFullPackageXml(sfAnt) {
     def metadataTypeFileNamesMap = [:]
     def FOLDER = 'Folder'
     def METADATA_ID = 'FullName/Id: '
+    def MANAGEABLE_STATE = 'Manageable State: '
+    def manageableStateValues = ['unmanaged', 'null']
 
     avalibleMetadataList.each { metaType ->
         
@@ -168,6 +170,8 @@ def generateFullPackageXml(sfAnt) {
             return
         }
         
+        formatPrint('Processing : ' + metaType.xmlName)
+
         def metaFilesLocation = "${tempFolderName}/${metaType.dirName}"
 
         def folders = []
@@ -181,8 +185,8 @@ def generateFullPackageXml(sfAnt) {
 
             metaFile.eachLine { line ->
                 if(line.startsWith(METADATA_ID)) {
-                    def fName = line.substring(METADATA_ID.size(), 
-                        line.indexOf('/', METADATA_ID.size()))
+                    def fName = line.substring(METADATA_ID.length(), 
+                        line.indexOf('/', METADATA_ID.length()))
                     folders.add(fName)
                 }
             }
@@ -199,17 +203,32 @@ def generateFullPackageXml(sfAnt) {
             }
 
             def metadataFiles = []
+            def metadataFileName = ''
             metaFile.eachLine { line ->
+                if(line.startsWith('*****')) {
+                    metadataFileName = ''
+                    return
+                }
                 if(line.startsWith(METADATA_ID)) {
-                    def metadataFileName = line.substring(METADATA_ID.size(), 
-                        line.indexOf('/', METADATA_ID.size()))
-                    metadataFiles.add(metadataFileName)
+                    metadataFileName = line.substring(METADATA_ID.length(), 
+                        line.indexOf('/', METADATA_ID.length()))
+                }
+                if(line.startsWith(MANAGEABLE_STATE)) {
+                    def manageableStateValue = line.substring(MANAGEABLE_STATE.length())
+                    
+                    if(manageableStateValues.contains(manageableStateValue)
+                    && metadataFileName != '') {
+                        metadataFiles.add(metadataFileName)
+                    }
                 }
             }
             metadataTypeFileNamesMap.put(metaType.xmlName, metadataFiles.toSet())
         }
         
     }
+
+    metadataTypeFileNamesMap.put('EmailTemplate', getEmailTemplates())
+
     String packageXmlLocation = 'temp/package.xml'
     def packageXmlFile = new File(packageXmlLocation)
     packageXmlFile.text = createPackageXml(metadataTypeFileNamesMap, false)
