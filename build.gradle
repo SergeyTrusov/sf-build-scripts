@@ -41,34 +41,35 @@ task mytest << {
 }
 
 def getEmailTemplates() {
-    String sessionId = getSessionId().sessionId
-    String url = getSessionId().url
-
     def emailTemplates = []
-    def http = new HTTPBuilder('https://eu3.salesforce.com')
+
+    String sessionId = getSessionId().sessionId
+    URI fullUri = new URI(getSessionId().url as String)
+
+    def http = new HTTPBuilder("${fullUri.scheme}://${fullUri.host}")
     http.request(GET) { req ->
         uri.path = '/services/data/v33.0/tooling/query'
         uri.query = [q : 'Select id,FullName from EmailTemplate' ]
-        // contentType : TEXT
         headers.'Authorization' = "Bearer ${sessionId}"
 
         response.success = { resp, reader ->
-            println resp
-        }
-
-        response.'200' =  {resp, reader ->
             reader.records.each {
                 emailTemplates.add(it.FullName)
             }
         }
+
+        response.failure = { resp ->
+            formatPrint('Get Email Templates request error')
+        }
     }
-    println emailTemplates
+    return emailTemplates
 }
 
 def Expando getSessionId() {
     def http = new HTTPBuilder('https://login.salesforce.com')
 
-    String requestBody = """
+    String requestBody = 
+    """
     <env:Envelope xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:env='http://schemas.xmlsoap.org/soap/envelope/'>
         <env:Body>
             <sf:login xmlns:sf='urn:enterprise.soap.sforce.com'>
@@ -90,13 +91,8 @@ def Expando getSessionId() {
                 url : reader.Body.loginResponse.result.serverUrl);
         }
 
-        response.'404' = {
-            println 'Not found'
-        }
-
-        response.'500' =  {resp, reader ->
-            println resp
-            println reader
+        response.failure = { resp ->
+            formatPrint('Session Id request error')
         }
     }
 }
@@ -111,17 +107,17 @@ def getAvalibleMetadata(sfAnt) {
         return
     }
 
-    String xmlName = 'XMLName: '
-    String dirName = 'DirName: '
-    String suffix = 'Suffix: '
-    String hasMetaFile = 'HasMetaFile: '
-    String inFolder = 'InFolder: '
-    String childObjects = 'ChildObjects: '
+    String XML_NAME = 'XMLName: '
+    String DIR_NAME = 'DirName: '
+    String SUFFIX = 'Suffix: '
+    String HASMETAFILE = 'HasMetaFile: '
+    String INFOLDER = 'InFolder: '
+    String CHILDOBJECTS = 'ChildObjects: '
 
     List<MetadataType> sfMetadataList = new ArrayList<MetadataType>()
     MetadataType metaType;
     describeFile.eachLine { line, index ->
-        if(line.startsWith('************************************************************')) {
+        if(line.startsWith('*****')) {
             if(index > 1) {
                 sfMetadataList.add(metaType)
             }
@@ -129,18 +125,18 @@ def getAvalibleMetadata(sfAnt) {
             return
         }
 
-        if(line.startsWith(xmlName)) {
-            metaType.xmlName = line.substring(xmlName.length())
-        } else if(line.startsWith(dirName)) {
-            metaType.dirName = line.substring(dirName.length())
-        } else if(line.startsWith(suffix)) {
-            metaType.suffix = line.substring(suffix.length())
-        } else if(line.startsWith(hasMetaFile)) {
-            metaType.hasMetaFile = line.substring(hasMetaFile.length()).toBoolean()
-        } else if(line.startsWith(inFolder)) {
-            metaType.inFolder = line.substring(inFolder.length()).toBoolean()
-        } else if(line.startsWith(childObjects)) {
-            def commaSeparatedValues = line.substring(childObjects.length())
+        if(line.startsWith(XML_NAME)) {
+            metaType.xmlName = line.substring(XML_NAME.length())
+        } else if(line.startsWith(DIR_NAME)) {
+            metaType.dirName = line.substring(DIR_NAME.length())
+        } else if(line.startsWith(SUFFIX)) {
+            metaType.suffix = line.substring(SUFFIX.length())
+        } else if(line.startsWith(HASMETAFILE)) {
+            metaType.hasMetaFile = line.substring(HASMETAFILE.length()).toBoolean()
+        } else if(line.startsWith(INFOLDER)) {
+            metaType.inFolder = line.substring(INFOLDER.length()).toBoolean()
+        } else if(line.startsWith(CHILDOBJECTS)) {
+            def commaSeparatedValues = line.substring(CHILDOBJECTS.length())
             if(!commaSeparatedValues.contains(',')) {
                 return
             }
