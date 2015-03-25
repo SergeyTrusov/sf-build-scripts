@@ -481,22 +481,6 @@ def formatPrint(String message) {
     logger.quiet('')
 }
 
-def captureAntOutput(ant, Closure command) {
-    def buffer = new ByteArrayOutputStream()
-    def captureStream = new PrintStream(buffer, true, "UTF-8")
-    def listener = new org.apache.tools.ant.DefaultLogger(
-        errorPrintStream: captureStream,
-        outputPrintStream: captureStream,
-        messageOutputLevel: org.apache.tools.ant.Project.MSG_INFO
-    )
-
-    ant.project.addBuildListener(listener)
-    project.configure(ant, command)
-    ant.project.removeBuildListener(listener)
-
-    return buffer.toString("UTF-8");
-}
-
 def retrieveMetadataFromServer(sfAnt, String targetPath, String packageXmlPath) {
     sfAnt.retrieve(
         username : sfUsername, 
