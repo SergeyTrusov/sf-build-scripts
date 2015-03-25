@@ -37,7 +37,7 @@ ant.taskdef(
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 task mytest << {
-    println getEmailTemplates()
+    println generateFullPackageXml(sfAnt)
 }
 
 def getEmailTemplates() {
@@ -148,35 +148,42 @@ def getAvalibleMetadata(sfAnt) {
     return sfMetadataList
 }
 
-task generateFullPackageXml << {
+def generateFullPackageXml(sfAnt) {
     def avalibleMetadataList = getAvalibleMetadata(sfAnt)
 
-    def folder = new File('temp')
-    folder.mkdir()
+    String tempFolderName = 'temp'
+    def folder = new File(tempFolderName)
+    if(!folder.exists()) {
+        folder.mkdir()
+    }
 
-    def metaTypeFilesMap = [:]
+    def ignoredMetadataTypes = ['EmailTemplate']
+    def metadataTypeFileNamesMap = [:]
+    def FOLDER = 'Folder'
+    def METADATA_ID = 'FullName/Id: '
+
     avalibleMetadataList.each { metaType ->
         
-        // if(metaType.childObjects != null) {
-        //     return
-        // }
-
-        if(metaType.xmlName == 'EmailTemplate') {
+        if(ignoredMetadataTypes.contains(metaType.xmlName)) {
             return
         }
+        
+        def metaFilesLocation = "${tempFolderName}/${metaType.dirName}"
 
         def folders = []
         if(metaType.inFolder) {
-            getListMetadata(sfAnt, metaType.xmlName + 'Folder', 'temp/' + metaType.dirName, '')
-            def metaFile = new File('temp/' + metaType.dirName)
+            getListMetadata(sfAnt, metaType.xmlName + FOLDER, metaFilesLocation, '')
+
+            def metaFile = new File(metaFilesLocation)
             if(!metaFile.exists()) {
                 return
             }
+
             metaFile.eachLine { line ->
-                String s = 'FullName/Id:'
-                if(line.startsWith(s)) {
-                    def name = line.substring(s.size() + 1, line.indexOf('/', s.size()))
-                    folders.add(name)
+                if(line.startsWith(METADATA_ID)) {
+                    def fName = line.substring(METADATA_ID.size(), 
+                        line.indexOf('/', METADATA_ID.size()))
+                    folders.add(fName)
                 }
             }
         } else {
@@ -184,25 +191,28 @@ task generateFullPackageXml << {
         }
 
         folders.each { folderName ->
-            getListMetadata(sfAnt, metaType.xmlName, 'temp/' + metaType.dirName, folderName) 
-            def metaFile = new File('temp/' + metaType.dirName)
+            getListMetadata(sfAnt, metaType.xmlName, metaFilesLocation, folderName)
+
+            def metaFile = new File(metaFilesLocation)
             if(!metaFile.exists()) {
                 return
             }
-            def listMeta = []
+
+            def metadataFiles = []
             metaFile.eachLine { line ->
-                String s = 'FullName/Id:'
-                if(line.startsWith(s)) {
-                    def name = line.substring(s.size() + 1, line.indexOf('/', s.size()))
-                    listMeta.add(name)
+                if(line.startsWith(METADATA_ID)) {
+                    def metadataFileName = line.substring(METADATA_ID.size(), 
+                        line.indexOf('/', METADATA_ID.size()))
+                    metadataFiles.add(metadataFileName)
                 }
             }
-            metaTypeFilesMap.put(metaType.xmlName, listMeta.toSet())
+            metadataTypeFileNamesMap.put(metaType.xmlName, metadataFiles.toSet())
         }
         
     }
-    def packageXmlFile = new File('package.xml')
-    packageXmlFile.text = createPackageXml(metaTypeFilesMap, false)
+    String packageXmlLocation = 'temp/package.xml'
+    def packageXmlFile = new File(packageXmlLocation)
+    packageXmlFile.text = createPackageXml(metadataTypeFileNamesMap, false)
 }
 
 task deployChanges(/*dependsOn: 'backup'*/) << {
@@ -506,6 +516,15 @@ def getListMetadata(sfAnt, String metadataType, String resultPath, String folder
         metadataType : metadataType,
         folder : folderName,
         resultFilePath : resultPath
+    )
+}
+
+def getMetadataDescription(sfAnt, filePath) {
+    sfAnt.describeMetadata(
+        username : sfUsername, 
+        password : sfPassword, 
+        serverurl : getProjectProperty('sf.serverurl'),
+        resultFilePath : filePath
     )
 }
 
