@@ -36,8 +36,25 @@ ant.taskdef(
 )
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
-task mytest << {
-    println generateFullPackageXml(sfAnt)
+task sync << {
+    generateFullPackageXml(sfAnt)
+    retrieveMetadataFromServer(sfAnt, 'src', 'temp/package.xml')
+
+    //git commit
+
+    //generate package.xml for another instance
+
+    //retrive Metadata
+
+    //git commit
+
+    //git diff
+
+    //create package.xml for changed file
+
+    //retrive changed file
+
+    //deploy changed files
 }
 
 def getEmailTemplates() {
@@ -231,7 +248,7 @@ def generateFullPackageXml(sfAnt) {
 
     String packageXmlLocation = 'temp/package.xml'
     def packageXmlFile = new File(packageXmlLocation)
-    packageXmlFile.text = createPackageXml(metadataTypeFileNamesMap, false)
+    packageXmlFile.setText(createPackageXml(metadataTypeFileNamesMap, false), 'UTF-8')
 }
 
 task deployChanges(/*dependsOn: 'backup'*/) << {
