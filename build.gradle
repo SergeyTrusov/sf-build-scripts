@@ -25,6 +25,15 @@ privateProperties.load(new FileInputStream("private.sf.properties"))
 ext {
     sfUsername = privateProperties.getProperty('sf.username')
     sfPassword = privateProperties.getProperty('sf.password') 
+
+    serverUrlSyncFrom = privateProperties.getProperty('sf.url.sync.from')
+    sfUsernameSyncFrom = privateProperties.getProperty('sf.username.sync.from')
+    sfPasswordSyncFrom = privateProperties.getProperty('sf.password.sync.from')
+
+    serverUrlSyncTo = privateProperties.getProperty('sf.url.sync.to')
+    sfUsernameSyncTo = privateProperties.getProperty('sf.username.sync.to')
+    sfPasswordSyncTo = privateProperties.getProperty('sf.password.sync.to')
+
     gradleHome = System.getenv('GRADLE_HOME')
     sfLibPath = gradleHome + '/lib/ant-salesforce.jar'
 }
@@ -37,10 +46,14 @@ ant.taskdef(
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 task sync << {
+    def commitMsg = getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
+
     generateFullPackageXml(sfAnt)
     retrieveMetadataFromServer(sfAnt, 'src', 'temp/package.xml')
 
     //git commit
+    formatPrint('Commit...')
+    result = execGit('.', ['commit', '-m', commitMsg], null)
 
     //generate package.xml for another instance
 
@@ -114,10 +127,10 @@ def Expando getSessionId() {
     }
 }
 
-def getAvalibleMetadata(sfAnt) {
+def getAvalibleMetadata(sfAnt, username, password, serverUrl) {
     String describeFileName = 'describe.log';
 
-    getMetadataDescription(sfAnt, describeFileName)
+    getMetadataDescription(sfAnt, username, password, serverUrl, describeFileName)
 
     def describeFile = new File(describeFileName)
     if(!describeFile.exists()) {
@@ -165,8 +178,8 @@ def getAvalibleMetadata(sfAnt) {
     return sfMetadataList
 }
 
-def generateFullPackageXml(sfAnt) {
-    def avalibleMetadataList = getAvalibleMetadata(sfAnt)
+def generateFullPackageXml(sfAnt, username, password, serverUrl) {
+    def avalibleMetadataList = getAvalibleMetadata(sfAnt, username, password, serverUrl)
 
     String tempFolderName = 'temp'
     def folder = new File(tempFolderName)
@@ -193,7 +206,7 @@ def generateFullPackageXml(sfAnt) {
 
         def folders = []
         if(metaType.inFolder) {
-            getListMetadata(sfAnt, metaType.xmlName + FOLDER, metaFilesLocation, '')
+            getListMetadata(sfAnt, username, password, serverUrl, metaType.xmlName + FOLDER, metaFilesLocation, '')
 
             def metaFile = new File(metaFilesLocation)
             if(!metaFile.exists()) {
@@ -212,7 +225,7 @@ def generateFullPackageXml(sfAnt) {
         }
 
         folders.each { folderName ->
-            getListMetadata(sfAnt, metaType.xmlName, metaFilesLocation, folderName)
+            getListMetadata(sfAnt, username, password, serverUrl, metaType.xmlName, metaFilesLocation, folderName)
 
             def metaFile = new File(metaFilesLocation)
             if(!metaFile.exists()) {
@@ -563,6 +576,27 @@ def getMetadataDescription(sfAnt, filePath) {
         resultFilePath : filePath
     )
 }
+
+def getMetadataDescription(sfAnt, username, password, serverUrl, filePath) {
+    sfAnt.describeMetadata(
+        username : username, 
+        password : password, 
+        serverurl : serverUrl,
+        resultFilePath : filePath
+    )
+}
+
+def getListMetadata(sfAnt, username, password, serverUrl, metadataType, resultPath, folderName) {
+    sfAnt.listMetadata(
+        username : username, 
+        password : password, 
+        serverurl : serverUrl, 
+        metadataType : metadataType,
+        folder : folderName,
+        resultFilePath : resultPath
+    )
+}
+
 
 // Standard task
 
