@@ -46,21 +46,13 @@ ant.taskdef(
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 task sync << {
-    def commitMsg = getProjectProperty('git.commit.backup.msg') + ' ' + new Date()
+    def fromBranchName = 'from'
+    def toBranchName = 'to'
 
-    generateFullPackageXml(sfAnt)
-    retrieveMetadataFromServer(sfAnt, 'src', 'temp/package.xml')
+    getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, fromBranchName)
 
-    //git commit
-    formatPrint('Commit...')
-    result = execGit('.', ['commit', '-m', commitMsg], null)
-
-    //generate package.xml for another instance
-
-    //retrive Metadata
-
-    //git commit
-
+    getAllMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
+    
     //git diff
 
     //create package.xml for changed file
@@ -68,6 +60,38 @@ task sync << {
     //retrive changed file
 
     //deploy changed files
+}
+
+def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, branchName) {
+    def commitMsg = 'Before sync' + ' ' + new Date()
+
+    formatPrint('Generating package.xml')
+    generateFullPackageXml(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom)
+
+    formatPrint('Checkout to branch : ' + branchName)
+    execGit('.', ['checkout', branchName], null)
+
+    formatPrint('Retrieve Metadata from server')
+    retrieveMetadataFromServer(sfAnt, 'src', 'temp/package.xml')
+
+    formatPrint('Add files to index...')
+    execGit('src', ['add', '-A'], null)
+
+    formatPrint('Diffing...')
+    ByteArrayOutputStream stream = new ByteArrayOutputStream()
+    execGit('.', ['diff', 'HEAD', '--name-only'], stream)
+    String gitOutput = stream.toString()
+
+    Boolean isAnyChanges = gitOutput != null && gitOutput.trim() != '';
+    if (isAnyChanges) {
+        formatPrint('There are no chages.')
+
+        formatPrint('Commit...')
+        execGit('.', ['commit', '-m', commitMsg], null)
+
+        formatPrint('Push...')
+        execGit('.', ['push', 'origin', branchName], null)
+    }
 }
 
 def getEmailTemplates() {
