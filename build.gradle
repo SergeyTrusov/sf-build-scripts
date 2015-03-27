@@ -1,5 +1,5 @@
-apply plugin: 'java'
-apply plugin: 'groovy'
+// apply plugin: 'java'
+// apply plugin: 'groovy'
 
 import groovy.xml.*
 import groovy.json.*
@@ -53,13 +53,10 @@ task sync << {
 
     getAllMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
     
-    //git diff
+    def stream = new ByteArrayOutputStream()
+    execGit('.', ['diff', '--name-status', "${fromBranchName}..${toBranchName}", 'src'], stream)
 
-    //create package.xml for changed file
-
-    //retrive changed file
-
-    //deploy changed files
+    deployChangesInGit(stream.toString())
 }
 
 def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, branchName) {
@@ -293,10 +290,13 @@ task deployChanges(/*dependsOn: 'backup'*/) << {
     def result = execGit('.', ['diff-tree', '--no-commit-id', '--name-status','-r', 
         getProjectProperty('git.commit.id.last'), 
         getProjectProperty('git.commit.id.first')], stream)
-    String gitOutput = stream.toString()
-    formatPrint('Changed files : \r\n' + gitOutput)
+    deployChanges(stream.toString())
+}
+
+def deployChangesInGit(String gitDiffOutput) {
+    formatPrint('Changed files : \r\n' + gitDiffOutput)
     
-    def parseWrapper = parseGitOutput(gitOutput)
+    def parseWrapper = parseGitOutput(gitDiffOutput)
     def changedSourceFiles = parseWrapper.changedFiles
     def folderNameChangedFilesMap = parseWrapper.folderFilesMap
     def folderNameDeletedFilesMap = parseWrapper.filderDeletedFilesMap
