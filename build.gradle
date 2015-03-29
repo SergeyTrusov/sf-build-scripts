@@ -26,11 +26,11 @@ ext {
     sfUsername = privateProperties.getProperty('sf.username')
     sfPassword = privateProperties.getProperty('sf.password') 
 
-    serverUrlSyncFrom = privateProperties.getProperty('sf.url.sync.from')
+    serverUrlSyncFrom = getProjectProperty('sf.url.sync.from')
     sfUsernameSyncFrom = privateProperties.getProperty('sf.username.sync.from')
     sfPasswordSyncFrom = privateProperties.getProperty('sf.password.sync.from')
 
-    serverUrlSyncTo = privateProperties.getProperty('sf.url.sync.to')
+    serverUrlSyncTo = getProjectProperty('sf.url.sync.to')
     sfUsernameSyncTo = privateProperties.getProperty('sf.username.sync.to')
     sfPasswordSyncTo = privateProperties.getProperty('sf.password.sync.to')
 
@@ -46,21 +46,35 @@ ant.taskdef(
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
 task sync << {
-    def fromBranchName = 'from'
-    def toBranchName = 'to'
+    def fromBranchName = getProjectProperty('git.branch.sync.from')
+    def toBranchName = getProjectProperty('git.branch.sync.to')
+    def remote = getProjectProperty('git.remote')
 
     getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, fromBranchName)
 
     getAllMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
     
     def stream = new ByteArrayOutputStream()
-    execGit('.', ['diff', '--name-status', "${fromBranchName}..${toBranchName}", 'src'], stream)
+    execGit('.', ['diff', '--name-status', "${remote}/${toBranchName}..${remote}/${fromBranchName}", 'src'], 
+        stream)
 
-    deployChangesInGit(stream.toString())
+    deployChangesInGit(sfAnt, stream.toString(), sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, 'src')
 }
 
 def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, branchName) {
-    def commitMsg = 'Before sync' + ' ' + new Date()
+    def commitMsg = getProjectProperty('git.commit.sync.msg') + ' on ' + new Date()
+    def syncFolderName = getProjectProperty('sync.folder')
+    def srcFolderName = 'src'
+
+    def syncDir = new File(syncFolderName)
+    if(!syncDir.exists()) {
+        syncDir.mkdir()
+    }
+
+    def srcFolder = new File(srcFolderName)
+    if(!srcFolder.exists()) {
+        srcFolder.mkdir()
+    }
 
     formatPrint('Generating package.xml')
     generateFullPackageXml(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom)
@@ -69,7 +83,7 @@ def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serve
     execGit('.', ['checkout', branchName], null)
 
     formatPrint('Retrieve Metadata from server')
-    retrieveMetadataFromServer(sfAnt, 'src', 'temp/package.xml')
+    retrieveMetadataFromServer(sfAnt, 'src', syncFolderName + '/package.xml')
 
     formatPrint('Add files to index...')
     execGit('src', ['add', '-A'], null)
@@ -80,22 +94,23 @@ def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serve
     String gitOutput = stream.toString()
 
     Boolean isAnyChanges = gitOutput != null && gitOutput.trim() != '';
-    if (isAnyChanges) {
-        formatPrint('There are no chages.')
-
-        formatPrint('Commit...')
-        execGit('.', ['commit', '-m', commitMsg], null)
-
-        formatPrint('Push...')
-        execGit('.', ['push', 'origin', branchName], null)
+    if (!isAnyChanges) {
+        formatPrint('There are no chages in branch : ' + branchName)
     }
+
+    formatPrint('Commit...')
+    execGit('.', ['commit', '-m', commitMsg], null)
+
+    formatPrint('Push...')
+    execGit('.', ['push', 'origin', branchName], null)
 }
 
-def getEmailTemplates() {
+def getEmailTemplates(serverUrl) {
     def emailTemplates = []
 
-    String sessionId = getSessionId().sessionId
-    URI fullUri = new URI(getSessionId().url as String)
+    def sessionIdObj = getSessionId(serverUrl)
+    String sessionId = sessionIdObj.sessionId
+    URI fullUri = new URI(sessionIdObj.url as String)
 
     def http = new HTTPBuilder("${fullUri.scheme}://${fullUri.host}")
     http.request(GET) { req ->
@@ -116,8 +131,8 @@ def getEmailTemplates() {
     return emailTemplates
 }
 
-def Expando getSessionId() {
-    def http = new HTTPBuilder('https://login.salesforce.com')
+def Expando getSessionId(url) {
+    def http = new HTTPBuilder(url)
 
     String requestBody = 
     """
@@ -149,7 +164,7 @@ def Expando getSessionId() {
 }
 
 def getAvalibleMetadata(sfAnt, username, password, serverUrl) {
-    String describeFileName = 'describe.log';
+    String describeFileName = getProjectProperty('sync.describe.path');
 
     getMetadataDescription(sfAnt, username, password, serverUrl, describeFileName)
 
@@ -202,7 +217,7 @@ def getAvalibleMetadata(sfAnt, username, password, serverUrl) {
 def generateFullPackageXml(sfAnt, username, password, serverUrl) {
     def avalibleMetadataList = getAvalibleMetadata(sfAnt, username, password, serverUrl)
 
-    String tempFolderName = 'temp'
+    String tempFolderName = getProjectProperty('sync.folder')
     def folder = new File(tempFolderName)
     if(!folder.exists()) {
         folder.mkdir()
@@ -278,9 +293,9 @@ def generateFullPackageXml(sfAnt, username, password, serverUrl) {
         
     }
 
-    metadataTypeFileNamesMap.put('EmailTemplate', getEmailTemplates())
+    metadataTypeFileNamesMap.put('EmailTemplate', getEmailTemplates(serverUrl))
 
-    String packageXmlLocation = 'temp/package.xml'
+    String packageXmlLocation = "${tempFolderName}/package.xml"
     def packageXmlFile = new File(packageXmlLocation)
     packageXmlFile.setText(createPackageXml(metadataTypeFileNamesMap, false), 'UTF-8')
 }
@@ -290,10 +305,11 @@ task deployChanges(/*dependsOn: 'backup'*/) << {
     def result = execGit('.', ['diff-tree', '--no-commit-id', '--name-status','-r', 
         getProjectProperty('git.commit.id.last'), 
         getProjectProperty('git.commit.id.first')], stream)
-    deployChanges(stream.toString())
+    // TODO: Define required params
+    // deployChanges(stream.toString())
 }
 
-def deployChangesInGit(String gitDiffOutput) {
+def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, projectFolder) {
     formatPrint('Changed files : \r\n' + gitDiffOutput)
     
     def parseWrapper = parseGitOutput(gitDiffOutput)
@@ -320,8 +336,8 @@ def deployChangesInGit(String gitDiffOutput) {
     formatPrint('Copy Files From : ' + getProjectProperty('src.dir') + 
         ' To : ' + getProjectProperty('build.dir'))
 
-    def currentSfApiVersion = getCurrentSfApiVersion()
-    formatPrint('Current SF API Version : ' + currentSfApiVersion)
+    // def currentSfApiVersion = getCurrentSfApiVersion()
+    // formatPrint('Current SF API Version : ' + currentSfApiVersion)
 
     if (folderNameDeletedFilesMap.keySet().size() > 0) {
 
@@ -374,7 +390,8 @@ def deployChangesInGit(String gitDiffOutput) {
     def packageXml = new File(getProjectProperty('build.dir') + '/src/package.xml')
     packageXml.text = packageXmlString
 
-    tasks.'deployMetadata'.execute()
+    // tasks.'deployMetadata'.execute()
+    deployMetadata(sfAnt, username, password, serverUrl, projectFolder)
 }
 
 task backup << {
@@ -527,7 +544,7 @@ def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap,
                 delegate.name(xmlName)
             }
         }
-        delegate.version(currentSfApiVersion)
+        delegate.version('33.0'/*currentSfApiVersion*/)
     }
     return stringWriter.toString()
 }
@@ -621,7 +638,18 @@ def getListMetadata(sfAnt, username, password, serverUrl, metadataType, resultPa
     )
 }
 
-
+def deployMetadata(sfAnt, username, password, url, folder) {
+    sfAnt.deploy(
+        serverurl : url, 
+        username : username,
+        password : password,
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        deployRoot : folder, 
+        rollbackOnError : getProjectProperty('sf.rollbackOnError'), 
+        checkOnly : getProjectProperty('sf.checkOnly'),
+        runAllTests : getProjectProperty('sf.runAllTests')
+    )
+}
 // Standard task
 
 task retrieveMetadata << {
