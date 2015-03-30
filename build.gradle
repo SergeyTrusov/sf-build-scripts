@@ -45,23 +45,50 @@ ant.taskdef(
 )
 def sfAnt = NamespaceBuilder.newInstance(ant, 'antlib:com.salesforce')
 
-task sync << {
+task cleanDirs << {
+    def syncDirName = getProjectProperty('sync.folder')
+    def syncDir = new File(syncDirName)
+    if(syncDir.exists()) {
+        delete syncDirName
+    }
+    syncDir.mkdir()
+    
+    def buildDirName = getProjectProperty('build.dir')
+    def buildDir = new File(buildDirName)
+    if(buildDir.exists()) {
+        delete buildDirName
+    } 
+    buildDir.mkdir()
+}
+
+task sync(dependsOn: cleanDirs) << {
     def fromBranchName = getProjectProperty('git.branch.sync.from')
     def toBranchName = getProjectProperty('git.branch.sync.to')
     def remote = getProjectProperty('git.remote')
 
-    getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, fromBranchName)
+    // // From
+    def toAvalibleMetadataList = getAvalibleMetadata(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom)
+    formatPrint('Generating package.xml')
+    generateFullPackageXml(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, 
+        toAvalibleMetadataList)
+    getMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, fromBranchName)
 
-    getAllMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
+    tasks.cleanDirs.execute()
+
+    // To
+    def fromAvalibleMetadataList = getAvalibleMetadata(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo)
+    formatPrint('Generating package.xml')
+    generateFullPackageXml(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, fromAvalibleMetadataList)
+    getMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
     
     def stream = new ByteArrayOutputStream()
     execGit('.', ['diff', '--name-status', "${remote}/${toBranchName}..${remote}/${fromBranchName}", 'src'], 
         stream)
 
-    deployChangesInGit(sfAnt, stream.toString(), sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, 'src')
+    deployChangesInGit(sfAnt, stream.toString(), sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, 'deploy/src', toAvalibleMetadataList)
 }
 
-def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, branchName) {
+def getMetadataAndCommit(sfAnt, username, password, serverUrl, branchName) {
     def commitMsg = getProjectProperty('git.commit.sync.msg') + ' on ' + new Date()
     def syncFolderName = getProjectProperty('sync.folder')
     def srcFolderName = 'src'
@@ -76,14 +103,11 @@ def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serve
         srcFolder.mkdir()
     }
 
-    formatPrint('Generating package.xml')
-    generateFullPackageXml(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom)
-
     formatPrint('Checkout to branch : ' + branchName)
     execGit('.', ['checkout', branchName], null)
 
     formatPrint('Retrieve Metadata from server')
-    retrieveMetadataFromServer(sfAnt, 'src', syncFolderName + '/package.xml')
+    retrieveMetadataFromServer(sfAnt, username, password, serverUrl, 'src', syncFolderName + '/package.xml')
 
     formatPrint('Add files to index...')
     execGit('src', ['add', '-A'], null)
@@ -105,10 +129,10 @@ def getAllMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serve
     execGit('.', ['push', 'origin', branchName], null)
 }
 
-def getEmailTemplates(serverUrl) {
+def getEmailTemplates(serverUrl, username, password) {
     def emailTemplates = []
 
-    def sessionIdObj = getSessionId(serverUrl)
+    def sessionIdObj = getSessionId(serverUrl, username, password)
     String sessionId = sessionIdObj.sessionId
     URI fullUri = new URI(sessionIdObj.url as String)
 
@@ -131,7 +155,7 @@ def getEmailTemplates(serverUrl) {
     return emailTemplates
 }
 
-def Expando getSessionId(url) {
+def Expando getSessionId(url, username, password) {
     def http = new HTTPBuilder(url)
 
     String requestBody = 
@@ -139,8 +163,8 @@ def Expando getSessionId(url) {
     <env:Envelope xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:env='http://schemas.xmlsoap.org/soap/envelope/'>
         <env:Body>
             <sf:login xmlns:sf='urn:enterprise.soap.sforce.com'>
-                <sf:username>${sfUsername}</sf:username>
-                <sf:password>${sfPassword}</sf:password>
+                <sf:username>${username}</sf:username>
+                <sf:password>${password}</sf:password>
             </sf:login>
         </env:Body>
     </env:Envelope>
@@ -214,16 +238,14 @@ def getAvalibleMetadata(sfAnt, username, password, serverUrl) {
     return sfMetadataList
 }
 
-def generateFullPackageXml(sfAnt, username, password, serverUrl) {
-    def avalibleMetadataList = getAvalibleMetadata(sfAnt, username, password, serverUrl)
-
+def generateFullPackageXml(sfAnt, username, password, serverUrl, avalibleMetadataList) {
     String tempFolderName = getProjectProperty('sync.folder')
     def folder = new File(tempFolderName)
     if(!folder.exists()) {
         folder.mkdir()
     }
 
-    def ignoredMetadataTypes = ['EmailTemplate']
+    def ignoredMetadataTypes = ['EmailTemplate', 'Scontrol']
     def metadataTypeFileNamesMap = [:]
     def FOLDER = 'Folder'
     def METADATA_ID = 'FullName/Id: '
@@ -293,11 +315,11 @@ def generateFullPackageXml(sfAnt, username, password, serverUrl) {
         
     }
 
-    metadataTypeFileNamesMap.put('EmailTemplate', getEmailTemplates(serverUrl))
+    metadataTypeFileNamesMap.put('EmailTemplate', getEmailTemplates(serverUrl, username, password))
 
     String packageXmlLocation = "${tempFolderName}/package.xml"
     def packageXmlFile = new File(packageXmlLocation)
-    packageXmlFile.setText(createPackageXml(metadataTypeFileNamesMap, false), 'UTF-8')
+    packageXmlFile.setText(createPackageXml(metadataTypeFileNamesMap, false, null), 'UTF-8')
 }
 
 task deployChanges(/*dependsOn: 'backup'*/) << {
@@ -309,7 +331,7 @@ task deployChanges(/*dependsOn: 'backup'*/) << {
     // deployChanges(stream.toString())
 }
 
-def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, projectFolder) {
+def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, projectFolder, avalibleMetadataList) {
     formatPrint('Changed files : \r\n' + gitDiffOutput)
     
     def parseWrapper = parseGitOutput(gitDiffOutput)
@@ -325,8 +347,10 @@ def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, proj
     def sourceAndItsMetadataFiles = addMetadataFilesToSources(changedSourceFiles)
     formatPrint('Changed Files For Deploy : \r\n' + sourceAndItsMetadataFiles)
 
-    delete fileTree(dir: getProjectProperty('build.dir'))
+    delete getProjectProperty('build.dir')
     formatPrint('Delete Forlder : ' + getProjectProperty('build.dir'))
+    File deployDir = new File(getProjectProperty('build.dir'))
+    deployDir.mkdir()
 
     copy {
         from getProjectProperty('src.dir')
@@ -342,13 +366,17 @@ def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, proj
     if (folderNameDeletedFilesMap.keySet().size() > 0) {
 
         String antOutput = '';
-        def metadataDescribe = new JsonSlurper()
-            .parse(file(getProjectProperty('metadata.describe.location')))
+        // def metadataDescribe = new JsonSlurper()
+        //     .parse(file(getProjectProperty('metadata.describe.location')))
 
         folderNameDeletedFilesMap.each { folder, listOfMetadata ->
-            def theNode = metadataDescribe.metadataObjects
-                        .find { it.directoryName == folder }
-            getListMetadata(sfAnt, theNode.xmlName, 'listMetadata.log')
+            def theNode = avalibleMetadataList.find { it.dirName == folder }
+            println 'folder = ' + folder
+            println 'theNode = ' + theNode
+            if(theNode == null) {
+                return
+            }
+            getListMetadata(sfAnt, username, password, serverUrl, theNode.xmlName, 'listMetadata.log', '')
             antOutput += new File('listMetadata.log').text
         }
 
@@ -375,7 +403,7 @@ def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, proj
         }
 
         if (folderNameExistDeleteFilesMap.keySet().size() > 0) {
-            def destructiveChangesXmlString = createPackageXml(folderNameExistDeleteFilesMap, true)
+            def destructiveChangesXmlString = createPackageXml(folderNameExistDeleteFilesMap, true, avalibleMetadataList)
             formatPrint('destructiveChnges.xml : \r\n' + destructiveChangesXmlString)
 
             def destructiveChangesXml = 
@@ -384,7 +412,7 @@ def deployChangesInGit(sfAnt, gitDiffOutput, username, password, serverUrl, proj
         }
     }
 
-    def packageXmlString = createPackageXml(folderNameChangedFilesMap, true)
+    def packageXmlString = createPackageXml(folderNameChangedFilesMap, true, avalibleMetadataList)
     formatPrint('Package.xml : \r\n' + packageXmlString)
 
     def packageXml = new File(getProjectProperty('build.dir') + '/src/package.xml')
@@ -484,7 +512,7 @@ def Expando parseGitOutput(String output) {
             def currentFile = filePath[filePath.size() - 1]
             if (currentFile.indexOf('-meta.xml') == -1) {
                 def currentFileWithoutExtension = currentFile
-                    .substring(0, currentFile.indexOf('.'))
+                    .substring(0, currentFile.lastIndexOf('.'))
                 if (changedFilesInFolder) {
                     changedFilesInFolder.add(currentFileWithoutExtension)
                 } else {
@@ -519,9 +547,11 @@ def String getCurrentSfApiVersion() {
     return originalPackageXml.get('version').text();
 }
 
-def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap, Boolean translateName) {
-    def metadataDescribe = new JsonSlurper()
-        .parse(file(getProjectProperty('metadata.describe.location')))
+def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap, Boolean translateName, avalibleMetadataList) {
+    // def metadataDescribe = new JsonSlurper()
+    //     .parse(file(getProjectProperty('metadata.describe.location')))
+
+    def ignoredMap = ['CustomObject':['UserTerritory2Association', 'Territory2Model', 'Territory2']]
 
     def stringWriter = new StringWriter()
     def builder = new MarkupBuilder(stringWriter)
@@ -535,8 +565,8 @@ def String createPackageXml(Map<String, List<String>> folderNameChangedFilesMap,
                 }
                 String xmlName = '';
                 if(translateName) {
-                    def theNode = metadataDescribe.metadataObjects
-                        .find { it.directoryName == filderName }
+                    def theNode = avalibleMetadataList
+                        .find { it.dirName == filderName }
                     xmlName = theNode.xmlName
                 } else {
                     xmlName = filderName
@@ -582,6 +612,17 @@ def retrieveMetadataFromServer(sfAnt, String targetPath, String packageXmlPath) 
         username : sfUsername, 
         password : sfPassword, 
         serverurl : getProjectProperty('sf.serverurl'), 
+        maxPoll : getProjectProperty('sf.maxPoll'), 
+        retrieveTarget : targetPath, 
+        unpackaged : packageXmlPath
+    )
+}
+
+def retrieveMetadataFromServer(sfAnt, username, password, serverUrl, targetPath, packageXmlPath) {
+    sfAnt.retrieve(
+        username : username, 
+        password : password, 
+        serverurl : serverUrl, 
         maxPoll : getProjectProperty('sf.maxPoll'), 
         retrieveTarget : targetPath, 
         unpackaged : packageXmlPath
