@@ -65,12 +65,13 @@ task sync(dependsOn: cleanDirs) << {
     def fromBranchName = getProjectProperty('git.branch.sync.from')
     def toBranchName = getProjectProperty('git.branch.sync.to')
     def remote = getProjectProperty('git.remote')
+    def requiredMetadataSet = getProjectProperty('sync.metadata').tokenize(',').toSet()
 
     // // From
     def toAvalibleMetadataList = getAvalibleMetadata(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom)
     formatPrint('Generating package.xml')
     generateFullPackageXml(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, 
-        toAvalibleMetadataList)
+        toAvalibleMetadataList, requiredMetadataSet)
     getMetadataAndCommit(sfAnt, sfUsernameSyncFrom, sfPasswordSyncFrom, serverUrlSyncFrom, fromBranchName)
 
     tasks.cleanDirs.execute()
@@ -78,7 +79,7 @@ task sync(dependsOn: cleanDirs) << {
     // To
     def fromAvalibleMetadataList = getAvalibleMetadata(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo)
     formatPrint('Generating package.xml')
-    generateFullPackageXml(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, fromAvalibleMetadataList)
+    generateFullPackageXml(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, fromAvalibleMetadataList, requiredMetadataSet)
     getMetadataAndCommit(sfAnt, sfUsernameSyncTo, sfPasswordSyncTo, serverUrlSyncTo, toBranchName)
     
     def stream = new ByteArrayOutputStream()
@@ -238,7 +239,7 @@ def getAvalibleMetadata(sfAnt, username, password, serverUrl) {
     return sfMetadataList
 }
 
-def generateFullPackageXml(sfAnt, username, password, serverUrl, avalibleMetadataList) {
+def generateFullPackageXml(sfAnt, username, password, serverUrl, avalibleMetadataList, requiredMetadataSet) {
     String tempFolderName = getProjectProperty('sync.folder')
     def folder = new File(tempFolderName)
     if(!folder.exists()) {
@@ -258,6 +259,10 @@ def generateFullPackageXml(sfAnt, username, password, serverUrl, avalibleMetadat
             return
         }
         
+        if(!requiredMetadataSet.contains(metaType.xmlName)) {
+            return
+        }
+
         formatPrint('Processing : ' + metaType.xmlName)
 
         def metaFilesLocation = "${tempFolderName}/${metaType.dirName}"
